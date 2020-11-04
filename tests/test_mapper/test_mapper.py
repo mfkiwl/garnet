@@ -50,7 +50,7 @@ examples_coreir = [
 
 lassen_rules = "src/lassen/scripts/rewrite_rules/lassen_rewrite_rules.json"
 arch = read_arch("src/peak_generator/examples/misc_tests/test_alu.json")
-dse_fc = wrapped_peak_class(arch)
+dse_fc = wrapped_peak_class(arch, debug=True)
 dse_asm = asm_arch_closure(arch)(family.PyFamily())
 
 @pytest.mark.parametrize("PE", [
@@ -60,13 +60,14 @@ dse_asm = asm_arch_closure(arch)(family.PyFamily())
 @pytest.mark.parametrize("app", examples_coreir)
 def test_netlist(PE, app, io_sides, dw_files):
 
-    PE_fc = PE["fc"]
+    arch_fc = PE["fc"]
 
     chip_size = 3
     interconnect = create_cgra(chip_size, chip_size, io_sides,
                                num_tracks=3,
                                add_pd=True,
-                               mem_ratio=(1, 2))
+                               mem_ratio=(1, 2),
+                               pe_fc = arch_fc)
 
 
     c = CoreIRContext(reset=True)
@@ -76,7 +77,6 @@ def test_netlist(PE, app, io_sides, dw_files):
     cmod = cutil.load_from_json(file_name) #libraries=["lakelib"])
     dag = cutil.coreir_to_dag(CoreIRNodes, cmod)
     print_dag(dag)
-    arch_fc = PE_fc
     ArchNodes = Nodes("Arch")
     putil.load_from_peak(ArchNodes, arch_fc)
     mapper = Mapper(CoreIRNodes, ArchNodes, lazy=True, rule_file=PE["rules"])
@@ -104,7 +104,7 @@ def test_netlist(PE, app, io_sides, dw_files):
                                num_tracks=3,
                                add_pd=True,
                                mem_ratio=(1, 2),
-                               pe_fc=PE_fc)
+                               pe_fc=arch_fc)
 
     placement, routing = pnr(interconnect, (netlist_info["netlist"], netlist_info["buses"]))
     config_data = interconnect.get_route_bitstream(routing)
