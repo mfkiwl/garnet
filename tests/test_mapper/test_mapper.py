@@ -14,18 +14,13 @@ from metamapper.node import Nodes, Constant
 import metamapper.peak_util as putil
 from metamapper.coreir_mapper import Mapper
 
-
-
-
-
 @pytest.fixture()
 def io_sides():
     return IOSide.North | IOSide.East | IOSide.South | IOSide.West
 
-
-
 examples_coreir = [
     "add2",
+    "conv_3_3",
 ]
 
 lassen_rules = "src/lassen/scripts/rewrite_rules/lassen_rewrite_rules.json"
@@ -56,7 +51,6 @@ def test_netlist(app, io_sides):
     mapper = Mapper(CoreIRNodes, ArchNodes, lazy=True, rule_file = lassen_rules)
     mapped_dag = mapper.do_mapping(dag, prove_mapping=False)
     print_dag(mapped_dag)
-
 
     node_info = {
         ArchNodes.dag_nodes["PE"] : 'p',
