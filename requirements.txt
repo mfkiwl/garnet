@@ -1,5 +1,4 @@
-
-coreir>=2.0.112  # should be first so we get the latest version
+coreir>=2.0.123  # should be first so we get the latest version
 -e git://github.com/jack-melchert/ast_tools#egg=ast-tools
 -e git://github.com/jack-melchert/peak_generator#egg=peak_generator
 -e git://github.com/StanfordAHA/lassen.git@garnet-integration#egg=lassen
@@ -18,6 +17,6 @@ ordered_set
 cosa
 -e git://github.com/leonardt/fault.git#egg=fault
 hwtypes
-archipelago
+-e git+git://github.com/Kuree/archipelago.git#egg=archipelago
 peakrdl-html
 ralbot-html

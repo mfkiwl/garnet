@@ -10,6 +10,7 @@ import os
 import sys
 
 from mflowgen.components import Graph, Step
+from shutil import which
 
 def construct():
 
@@ -20,7 +21,7 @@ def construct():
   #-----------------------------------------------------------------------
 
   adk_name = 'tsmc16'
-  adk_view = 'stdview'
+  adk_view = 'multicorner'
 
   parameters = {
     'construct_path'    : __file__,
@@ -76,8 +77,12 @@ def construct():
   signoff      = Step( 'cadence-innovus-signoff',       default=True )
   pt_signoff   = Step( 'synopsys-pt-timing-signoff',    default=True )
   genlib       = Step( 'cadence-genus-genlib',        default=True )
-  drc          = Step( 'mentor-calibre-drc',            default=True )
-  lvs          = Step( 'mentor-calibre-lvs',            default=True )
+  if which("calibre") is not None:
+      drc          = Step( 'mentor-calibre-drc',            default=True )
+      lvs          = Step( 'mentor-calibre-lvs',            default=True )
+  else:
+      drc          = Step( 'cadence-pegasus-drc',           default=True )
+      lvs          = Step( 'cadence-pegasus-lvs',           default=True )
   debugcalibre = Step( 'cadence-innovus-debug-calibre', default=True )
 
   # Add extra input edges to innovus steps that need custom tweaks

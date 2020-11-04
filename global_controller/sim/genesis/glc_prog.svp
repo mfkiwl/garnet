@@ -62,16 +62,16 @@ program automatic `mname`(interface dut_ifc, interface jtag_ifc, interface axi_i
     //============================================================================//
     //Property assertion
     //============================================================================//
-    assert property (!(top.dut.cgra_cfg_read && top.dut.cgra_cfg_write)) else $error("read and write both asserted");
-    assert property (!((state==cgra_reading) && (top.dut.cgra_cfg_write))) else $error("write asserted while reading");
-    assert property (!((state==glb_reading) && (top.dut.glb_cfg_wr_en))) else $error("glb write asserted while glb reading");
-    assert property (!((state==sram_reading) && (top.dut.sram_cfg_wr_en))) else $error("glb sram write asserted while glb sram reading");
-    assert property (!((state==cgra_writing) && (top.dut.cgra_cfg_read))) else $error("read asserted while writing");
-    assert property (!((state==glb_writing) && (top.dut.glb_cfg_rd_en))) else $error("glb read asserted while glb writing");
-    assert property (!((state==sram_writing) && (top.dut.sram_cfg_rd_en))) else $error("glb sram read asserted while glb sram writing");
-    assert property (!((state==other) && (top.dut.cgra_cfg_read | top.dut.cgra_cfg_write))) else $error("cgra cfg r/w asserted while not doing either");
-    assert property (!((state==other) && (top.dut.glb_cfg_wr_en | top.dut.glb_cfg_rd_en))) else $error("glb cfg r/w asserted while not doing either");
-    assert property (!((state==other) && (top.dut.sram_cfg_wr_en | top.dut.sram_cfg_rd_en))) else $error("sram cfg r/w asserted while not doing either");
+    assert property (@(posedge dut_ifc.Clk) (!(top.dut.cgra_cfg_read && top.dut.cgra_cfg_write))) else $error("read and write both asserted");
+    assert property (@(posedge dut_ifc.Clk) (!((state==cgra_reading) && (top.dut.cgra_cfg_write)))) else $error("write asserted while reading");
+    assert property (@(posedge dut_ifc.Clk) (!((state==glb_reading) && (top.dut.glb_cfg_wr_en)))) else $error("glb write asserted while glb reading");
+    assert property (@(posedge dut_ifc.Clk) (!((state==sram_reading) && (top.dut.sram_cfg_wr_en)))) else $error("glb sram write asserted while glb sram reading");
+    assert property (@(posedge dut_ifc.Clk) (!((state==cgra_writing) && (top.dut.cgra_cfg_read)))) else $error("read asserted while writing");
+    assert property (@(posedge dut_ifc.Clk) (!((state==glb_writing) && (top.dut.glb_cfg_rd_en)))) else $error("glb read asserted while glb writing");
+    assert property (@(posedge dut_ifc.Clk) (!((state==sram_writing) && (top.dut.sram_cfg_rd_en)))) else $error("glb sram read asserted while glb sram writing");
+    assert property (@(posedge dut_ifc.Clk) (!((state==other) && (top.dut.cgra_cfg_read | top.dut.cgra_cfg_write)))) else $error("cgra cfg r/w asserted while not doing either");
+    assert property (@(posedge dut_ifc.Clk) (!((state==other) && (top.dut.glb_cfg_wr_en | top.dut.glb_cfg_rd_en)))) else $error("glb cfg r/w asserted while not doing either");
+    assert property (@(posedge dut_ifc.Clk) (!((state==other) && (top.dut.sram_cfg_wr_en | top.dut.sram_cfg_rd_en)))) else $error("sram cfg r/w asserted while not doing either");
 
     //============================================================================//
     //Add assertions for read sequence
@@ -357,12 +357,26 @@ program automatic `mname`(interface dut_ifc, interface jtag_ifc, interface axi_i
         read_config(); 
     end
        
-    // stall
+    // stall all
+    @(posedge dut_ifc.Clk);
+    write_gc_reg(write_stall,{`2*$num_glb_tiles`{1'b1}});
+    repeat(2) jtag_driver.Next_tck();
+    check_register(top.dut.glb_stall, {`$num_glb_tiles`{1'b1}});
+    check_register(top.dut.cgra_stall, {`$num_glb_tiles`{1'b1}});
+
+    // cgra stall
     @(posedge dut_ifc.Clk);
     write_gc_reg(write_stall,32'b11);
     repeat(2) jtag_driver.Next_tck();
-    check_register(top.dut.glb_stall, 1);
-    check_register(top.dut.cgra_stall, 1);
+    check_register(top.dut.glb_stall, 0);
+    check_register(top.dut.cgra_stall, 16'b11);
+
+    // glb stall
+    @(posedge dut_ifc.Clk);
+    write_gc_reg(write_stall,32'b11 << 16);
+    repeat(2) jtag_driver.Next_tck();
+    check_register(top.dut.glb_stall, 16'b11);
+    check_register(top.dut.cgra_stall, 0);
 
     // unstall
     @(posedge dut_ifc.Clk);
@@ -416,6 +430,10 @@ program automatic `mname`(interface dut_ifc, interface jtag_ifc, interface axi_i
     // axi control
     @(posedge dut_ifc.Clk);
     addrmap_read(am_global_reset);
+
+    // axi control - stall all
+    @(posedge dut_ifc.Clk);
+    addrmap_write(am_stall, {`2*$num_glb_tiles`{1'b1}});
 
     // axi control - stall
     @(posedge dut_ifc.Clk);
@@ -790,7 +808,6 @@ program automatic `mname`(interface dut_ifc, interface jtag_ifc, interface axi_i
 
     task axi_stall(int data);
     begin
-        assert (data >= 2'b00 && data <= 2'b11) else $display("stall signal is two bit");
         gc_interface = axi4;
         config_count++;
         axi_trans.addr = 'hc;
@@ -800,6 +817,8 @@ program automatic `mname`(interface dut_ifc, interface jtag_ifc, interface axi_i
         $fdisplay(file_desc,"%t: %m: Trans %d (axi stall):  Address to CGRA=%d, Data to CGRA=%d",  
             $time, config_count, axi_ifc.awaddr, axi_ifc.wdata);
         repeat (100) @(posedge dut_ifc.Clk); 
+        check_register(top.dut.glb_stall, data[`2*$num_glb_tiles-1`:`$num_glb_tiles`]);
+        check_register(top.dut.cgra_stall, data[`$num_glb_tiles-1`:0]);
     end
     endtask
 

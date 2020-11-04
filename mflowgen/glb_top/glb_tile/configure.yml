@@ -3,10 +3,20 @@ name: glb_tile
 commands:
   - bash get_glb_outputs.sh
 
+inputs:
+  - design.v
+
 outputs:
   - glb_tile_tt.lib
   - glb_tile.lef
   - glb_tile.gds
   - glb_tile.lvs.v
   - sram.spi
+
+postconditions:
+  - assert File( 'outputs/glb_tile_tt.lib' ) # must exist
+  - assert File( 'outputs/glb_tile.lef' ) # must exist
+  - assert File( 'outputs/glb_tile.gds' ) # must exist
+  - assert File( 'outputs/glb_tile.lvs.v' ) # must exist
+  - assert File( 'outputs/sram.spi' ) # must exist
 

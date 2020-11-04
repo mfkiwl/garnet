@@ -108,7 +108,8 @@ def test_non_lassen_pe_op(dw_files):
             shutil.copy(filename, tempdir)
         tester.compile_and_run(target="verilator",
                                magma_output="coreir-verilog",
-                               magma_opts={"coreir_libs": {"float_DW"}},
+                               magma_opts={"coreir_libs": {"float_DW"},
+                                           "inline": False},
                                directory=tempdir,
                                flags=["-Wno-fatal"])
 
@@ -184,7 +185,8 @@ def test_pe_data_gate(op, dw_files):
                                    simulator="ncsim",
                                    magma_output="coreir-verilog",
                                    ext_srcs=ext_srcs,
-                                   magma_opts={"coreir_libs": {"float_DW"}},
+                                   magma_opts={"coreir_libs": {"float_DW"},
+                                               "inline": False},
                                    directory=tempdir,)
         else:
             for filename in dw_files:
@@ -192,6 +194,7 @@ def test_pe_data_gate(op, dw_files):
             tester.compile_and_run(target="verilator",
                                    magma_output="coreir-verilog",
                                    magma_opts={"coreir_libs": {"float_DW"},
+                                               "inline": False,
                                                "verilator_debug": True},
                                    directory=tempdir,
                                    flags=["-Wno-fatal"])
