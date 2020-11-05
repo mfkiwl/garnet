@@ -135,6 +135,8 @@ def test_netlist(PE, app, io_sides, dw_files):
     src_name1 = f"glb2io_16_X{src_x1:02X}_Y{src_y1:02X}"
     dst_x, dst_y = placement["I3"]
     dst_name = f"io2glb_16_X{dst_x:02X}_Y{dst_y:02X}"
+
+    
     random.seed(0)
     for _ in range(100):
         num_1 = random.randrange(0, 256)
