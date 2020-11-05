@@ -20,6 +20,10 @@ import math
 import os
 import archipelago
 import archipelago.power
+from lassen.sim import PE_fc
+
+from peak_gen.arch import read_arch
+from peak_gen.peak_wrapper import wrapped_peak_class
 
 # set the debug mode to false to speed up construction
 set_debug_mode(False)
@@ -30,7 +34,8 @@ class Garnet(Generator):
                  use_sram_stub: bool = True, standalone: bool = False,
                  add_pond: bool = True,
                  use_io_valid: bool = False,
-                 pipeline_config_interval: int = 8):
+                 pipeline_config_interval: int = 8,
+                 pe_fc = PE_fc):
         super().__init__()
 
         # Check consistency of @standalone and @interconnect_only parameters. If
@@ -112,7 +117,8 @@ class Garnet(Generator):
                                    global_signal_wiring=wiring,
                                    pipeline_config_interval=pipeline_config_interval,
                                    mem_ratio=(1, 4),
-                                   standalone=standalone)
+                                   standalone=standalone,
+                                   pe_fc=pe_fc)
 
         self.interconnect = interconnect
 
@@ -349,6 +355,7 @@ def main():
     parser.add_argument("--virtualize-group-size", type=int, default=4)
     parser.add_argument("--virtualize", action="store_true")
     parser.add_argument("--use-io-valid", action="store_true")
+    parser.add_argument('--pe', type=str, default="")
     args = parser.parse_args()
 
     if not args.interconnect_only:
@@ -356,6 +363,12 @@ def main():
     if args.standalone and not args.interconnect_only:
         raise Exception("--standalone must be specified with "
                         "--interconnect-only as well")
+
+    pe_fc = PE_fc
+    if args.pe:
+        arch = read_arch(args.pe)
+        pe_fc = wrapped_peak_class(arch)
+
     garnet = Garnet(width=args.width, height=args.height,
                     add_pd=not args.no_pd,
                     pipeline_config_interval=args.pipeline_config_interval,
@@ -363,7 +376,8 @@ def main():
                     use_io_valid=args.use_io_valid,
                     interconnect_only=args.interconnect_only,
                     use_sram_stub=not args.no_sram_stub,
-                    standalone=args.standalone)
+                    standalone=args.standalone,
+                    pe_fc=pe_fc)
 
     if args.verilog:
         garnet_circ = garnet.circuit()
