@@ -24,6 +24,15 @@ from lassen.sim import PE_fc
 
 from peak_gen.arch import read_arch
 from peak_gen.peak_wrapper import wrapped_peak_class
+from mapper import CreateNetlist
+import metamapper.coreir_util as cutil
+from metamapper.common_passes import VerifyNodes, print_dag
+from metamapper import CoreIRContext
+from metamapper.irs.coreir import gen_CoreIRNodes
+from metamapper.node import Nodes, Constant
+import metamapper.peak_util as putil
+from metamapper.coreir_mapper import Mapper
+
 
 # set the debug mode to false to speed up construction
 set_debug_mode(False)
@@ -121,7 +130,7 @@ class Garnet(Generator):
                                    pe_fc=pe_fc)
 
         self.interconnect = interconnect
-
+        self.pe_fc = pe_fc
         # make multiple stall ports
         stall_port_pass(self.interconnect)
         # make multiple configuration ports
@@ -250,8 +259,46 @@ class Garnet(Generator):
         return input_interface, output_interface,\
                (reset_port_name, valid_port_name, en_port_name)
 
+    def metamap(self, app):
+        file_name = f"coreir_examples/post_mapped/{app}.json"
+        # arch_fc = PE["fc"]
+        # app = "conv_3_3"
+        ArchNodes = Nodes("Arch")
+        putil.load_from_peak(ArchNodes, self.pe_fc)
+        # file_name = f"coreir_examples/post_mapped/{app}.json"
+        c = CoreIRContext(reset=True)
+        cutil.load_libs(["cgralib"])
+        cutil.load_libs(["commonlib"])
+        CoreIRNodes = gen_CoreIRNodes(16)
+        cmod = cutil.load_from_json(file_name) #libraries=["lakelib"])
+        dag = cutil.coreir_to_dag(CoreIRNodes, cmod)
+        # mapper = Mapper(CoreIRNodes, ArchNodes, lazy=True, rule_file=PE["rules"])
+        # mapped_dag = mapper.do_mapping(dag, prove_mapping=False)
+        # print_dag(mapped_dag)
+        node_info = {
+            ArchNodes.dag_nodes["PE"] : 'p',
+            CoreIRNodes.dag_nodes["coreir.reg"][0]: 'R',
+            CoreIRNodes.dag_nodes["coreir.reg"][1]: 'R',
+            #CoreIRNodes.peak_nodes["corebit.reg"]: 'r'
+        }
+        netlist_info = CreateNetlist(node_info).doit(dag)
+        print("N")
+        for k, v in netlist_info["netlist"].items():
+            print(f"  {k}")
+            for _v in v:
+                print(f"    {_v}")
+
+        print("B")
+        for k,v in netlist_info["buses"].items():
+            print(f"  {k}, {v}")
+
+        net_to_id = netlist_info["net_to_id"]
+        id_to_name = {net_to_id[i] : i for i in net_to_id}
+        
+        return id_to_name, None, netlist_info["netlist"], netlist_info["buses"]
+
     def compile(self, halide_src, unconstrained_io=False, compact=False):
-        id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
+        id_to_name, instance_to_instr, netlist, bus = self.metamap(halide_src)
         app_dir = os.path.dirname(halide_src)
         if unconstrained_io:
             fixed_io = None
@@ -282,20 +329,7 @@ class Garnet(Generator):
         return bitstream, (input_interface, output_interface, reset, valid, en,
                            delay)
 
-    def compile_virtualize(self, halide_src, max_group):
-        id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
-        partition_result = archipelago.pnr_virtualize(self.interconnect, (netlist, bus), cwd="temp",
-                                                      id_to_name=id_to_name, max_group=max_group)
-        result = {}
-        for c_id, ((placement, routing), p_id_to_name) in partition_result.items():
-            bitstream = []
-            bitstream += self.interconnect.get_route_bitstream(routing)
-            bitstream += self.get_placement_bitstream(placement, p_id_to_name,
-                                                      instance_to_instr)
-            skip_addr = self.interconnect.get_skip_addr()
-            bitstream = compress_config_data(bitstream, skip_compression=skip_addr)
-            result[c_id] = bitstream
-        return result
+ 
 
     def create_stub(self):
         result = """

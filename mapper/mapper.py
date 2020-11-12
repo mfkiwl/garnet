@@ -68,7 +68,7 @@ class CreateNetlist(Visitor):
             if len(self.net_to_sp[e]) < 2:
                 del self.net_to_sp[e]
                 del self.buses[e]
-
+        breakpoint()
         return dict(
             id_to_instr=None,
             inst_to_instr=None,
@@ -83,7 +83,7 @@ class CreateNetlist(Visitor):
 
         # Create a node_id
         if type(node) not in self.node_info:
-            raise ValueError(f"Cannot handle {node}")
+            raise ValueError(f"Cannot handle {node}, not in {self.node_info}")
         node_id = f"{self.node_info[type(node)]}{self.node_id}"
         self.node_to_id[node] = node_id
         self.node_id += 1
@@ -126,4 +126,3 @@ class CreateNetlist(Visitor):
             self.node_id += 1
             self.net_to_sp[net_id].append((node_id, "f2io_16"))
             self.net_to_id[net_id] = node_id
-
