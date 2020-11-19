@@ -31,6 +31,10 @@ def __get_alu_mapping(op_str):
         return ALU.Add, Signed.unsigned
     elif op_str == "const":
         return ALU.Add, Signed.unsigned
+    elif op_str == "bitconst0":
+        return ALU.Add, Signed.unsigned
+    elif op_str == "bitconst1":
+        return ALU.Add, Signed.unsigned
     elif op_str == "mux":
         return ALU.Sel, Signed.unsigned
     elif op_str == "sub":
@@ -504,7 +508,6 @@ def pack_netlists(raw_netlists, name_to_id, fold_reg=True):
             for blk_id, port in net:
                 assert (port != "reg")
 
-    breakpoint()
     return raw_netlists, folded_blocks, changed_pe
 
 
@@ -608,11 +611,14 @@ def get_ub_params(instance):
     return json.dumps(result)
 
 
-def get_tile_op(instance, blk_id, changed_pe, rename_op=True):
+def get_tile_op(instance, blk_id, changed_pe, name, rename_op=True ):
     """rename_op (False) is used to calculate delay"""
 
     if "modref" in instance and instance["modref"] == "global.WrappedPE":
         
+        if "genargs" not in instance:
+            return "bitconst" + name.split("_")[-1].split("lutcnst")[1], 0
+
         return instance["genargs"], 0
 
     if "genref" not in instance:
@@ -692,25 +698,36 @@ def get_blks(netlist):
 
 
 def get_const_value(instance):
-    if "modref" in instance:
-        modref = instance["modref"]
-        if modref == "corebit.const":
-            val = instance["modargs"]["value"][-1]
-            if val:
+
+    if "genargs" in instance:
+        if "bitconst" in instance["genargs"]:
+            val = instance["genargs"].split("bitconst")[1]
+            if val == "1":
                 return "const1_1"
             else:
                 return "const0_0"
-    elif "genref" in instance:
-        genref = instance["genref"]
-        if genref == "coreir.const":
-            str_val = instance["modargs"]["value"][-1]
-            if isinstance(str_val, int):
-                int_val = str_val
-            else:
-                start_index = str_val.index("h")
-                str_val = str_val[start_index + 1:]
-                int_val = int(str_val, 16)
-            return "const{0}_{0}".format(int_val)
+        elif "const" in instance["genargs"]:
+            return "const{0}_{0}".format(0)
+
+    # if "modref" in instance:
+    #     modref = instance["modref"]
+    #     if modref == "corebit.const":
+    #         val = instance["modargs"]["value"][-1]
+    #         if val:
+    #             return "const1_1"
+    #         else:
+    #             return "const0_0"
+    # elif "genref" in instance:
+    #     genref = instance["genref"]
+    #     if genref == "coreir.const":
+    #         str_val = instance["modargs"]["value"][-1]
+    #         if isinstance(str_val, int):
+    #             int_val = str_val
+    #         else:
+    #             start_index = str_val.index("h")
+    #             str_val = str_val[start_index + 1:]
+    #             int_val = int(str_val, 16)
+    #         return "const{0}_{0}".format(int_val)
     return None
 
 
@@ -780,6 +797,11 @@ def get_tile_pins(blk_id, op, folded_block, instances, changed_pe,
     if blk_id in changed_pe or op == "const":
         pins[0] = "reg"
         pins[1] = "const0_0"
+
+    if "bitconst" in op:
+        val = op.split("bitconst")[1]
+        pins[0] = "reg"
+        pins[1] = f"const{val}_{val}"
 
     if op == "abs":
         pins[1] = "const0_0"
@@ -1185,7 +1207,7 @@ def map_app(pre_map):
             continue
 
         # find out the PE type
-        tile_op, _ = get_tile_op(instance, blk_id, changed_pe)
+        tile_op, _ = get_tile_op(instance, blk_id, changed_pe, id_to_name[blk_id] )
         if tile_op is None:
             continue
         pins = get_tile_pins(blk_id, tile_op, folded_blocks, instances,

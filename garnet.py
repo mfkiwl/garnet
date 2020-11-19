@@ -275,34 +275,12 @@ class Garnet(Generator):
         # mapper = Mapper(CoreIRNodes, ArchNodes, lazy=True, rule_file=PE["rules"])
         # mapped_dag = mapper.do_mapping(dag, prove_mapping=False)
         # print_dag(mapped_dag)
-        node_info = {
-            ArchNodes.dag_nodes["PE"] : 'p',
-            CoreIRNodes.dag_nodes["coreir.reg"][0]: 'R',
-            CoreIRNodes.dag_nodes["coreir.reg"][1]: 'R',
-            CoreIRNodes.dag_nodes["corebit.const"]: 'r'
-        }
-        netlist_info = CreateNetlist(node_info).doit(dag)
-        # netlist_info = create_resnet_netlist()
-        print("N")
-        for k, v in netlist_info["netlist"].items():
-            print(f"  {k}")
-            for _v in v:
-                print(f"    {_v}")
-
-        print("B")
-        for k,v in netlist_info["buses"].items():
-            print(f"  {k}, {v}")
-
-        net_to_id = netlist_info["net_to_id"]
-        id_to_name = {net_to_id[i] : i for i in net_to_id}
         
-        return id_to_name, None, netlist_info["netlist"], netlist_info["buses"]
 
     def compile(self, halide_src, unconstrained_io=False, compact=False):
-        id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
         # id_to_name, instance_to_instr, netlist, bus = self.metamap(halide_src)
+        id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
         print(netlist)
-        breakpoint()
         app_dir = os.path.dirname(halide_src)
         if unconstrained_io:
             fixed_io = None
@@ -372,8 +350,8 @@ def write_out_bitstream(filename, bitstream):
 
 def main():
     parser = argparse.ArgumentParser(description='Garnet CGRA')
-    parser.add_argument('--width', type=int, default=4)
-    parser.add_argument('--height', type=int, default=4)
+    parser.add_argument('--width', type=int, default=16)
+    parser.add_argument('--height', type=int, default=16)
     parser.add_argument('--pipeline_config_interval', type=int, default=8)
     parser.add_argument("--input-app", type=str, default="", dest="app")
     parser.add_argument("--input-file", type=str, default="", dest="input")

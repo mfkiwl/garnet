@@ -82,27 +82,47 @@ class CreateNetlist(Visitor):
         Visitor.generic_visit(self, node)
 
         # Create a node_id
-        if type(node) not in self.node_info:
-            raise ValueError(f"Cannot handle {node}, not in {self.node_info}")
-        node_id = f"{self.node_info[type(node)]}{self.node_id}"
-        self.node_to_id[node] = node_id
-        self.node_id += 1
 
-        # Get the child name -> nets
-        fields = list(node.nodes.peak_nodes[node.node_name].Py.input_t.field_dict)
-        for field, child in zip(fields, node.children()):
-            if isinstance(child, Constant):
-                continue
-            net_id = self.node_to_nets[child]
-            self.net_to_sp[net_id].append((node_id, field))
+        if node.node_name == 'InstanceInput':
+            node_id = f"{'m'}{self.node_id}"
+            self.node_to_id[node] = node_id
+            self.node_id += 1
 
-        #Create output nets and add to net_to_sp
-        net_info = self.T_to_nets(node.type)
-        self.node_to_nets[node] = net_info
-        for field, net_id in net_info.items():
-            assert isinstance(net_id, str)
-            self.net_to_sp[net_id].append((node_id, field))
-            self.net_to_id[net_id] = node_id
+            for child in node.children():
+                if isinstance(child, Constant):
+                    continue
+                net_id = self.node_to_nets[child]
+                self.net_to_sp[net_id].append((node_id, 'field_temp'))
+
+            #Create output nets and add to net_to_sp
+            net_info = self.T_to_nets(node.type)
+            self.node_to_nets[node] = net_info
+            for field, net_id in net_info.items():
+                assert isinstance(net_id, str)
+                self.net_to_sp[net_id].append((node_id, field))
+                self.net_to_id[net_id] = node_id
+        else:
+            if type(node) not in self.node_info:
+                raise ValueError(f"Cannot handle {node}, not in {self.node_info}")
+            node_id = f"{self.node_info[type(node)]}{self.node_id}"
+            self.node_to_id[node] = node_id
+            self.node_id += 1
+
+            # Get the child name -> nets
+            fields = list(node.nodes.peak_nodes[node.node_name].Py.input_t.field_dict)
+            for field, child in zip(fields, node.children()):
+                if isinstance(child, Constant):
+                    continue
+                net_id = self.node_to_nets[child]
+                self.net_to_sp[net_id].append((node_id, field))
+
+            #Create output nets and add to net_to_sp
+            net_info = self.T_to_nets(node.type)
+            self.node_to_nets[node] = net_info
+            for field, net_id in net_info.items():
+                assert isinstance(net_id, str)
+                self.net_to_sp[net_id].append((node_id, field))
+                self.net_to_id[net_id] = node_id
 
     def visit_Input(self, node):
         net_info = self.T_to_nets(node.type, input=True)
@@ -121,6 +141,8 @@ class CreateNetlist(Visitor):
     def visit_Output(self, node):
         Visitor.generic_visit(self, node)
         for (field, T), child in zip(node.type.field_dict.items(), node.children()):
+            if isinstance(child, Constant):
+                continue
             net_id = self.node_to_nets[child]
             node_id = f"I{self.node_id}"
             self.node_id += 1
