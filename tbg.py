@@ -7,7 +7,7 @@ import sys
 import filecmp
 from fault import Tester
 import glob
-
+import random
 
 def copy_file(src_filename, dst_filename, override=False):
     if (
@@ -31,6 +31,7 @@ class BasicTester(Tester):
 
     def __get_x(self, addr):
         x = (addr >> 8) & 0xFF
+        # print(x)
         if x > self.__xmax:
             self.__xmax = x
         if x < self.__xmin:
@@ -276,10 +277,10 @@ class TestBenchGenerator:
         # now load the file up
 
         # file in
-        file_in = tester.file_open(self.input_filename, "r",
-                                   chunk_size=self._input_size)
-        file_out = tester.file_open(self.output_filename, "w",
-                                    chunk_size=self._output_size)
+        # file_in = tester.file_open(self.input_filename, "r",
+        #                            chunk_size=self._input_size)
+        # file_out = tester.file_open(self.output_filename, "w",
+        #                             chunk_size=self._output_size)
         if len(self.valid_port_name) > 0:
             valid_out = tester.file_open(f"{self.output_filename}.valid", "w")
         else:
@@ -296,7 +297,7 @@ class TestBenchGenerator:
         for addr, value in self.bitstream:
             tester.config_read(addr)
             tester.eval()
-            tester.expect(self.circuit.read_config_data, value)
+            # tester.expect(self.circuit.read_config_data, value)
 
         tester.done_config()
 
@@ -318,40 +319,56 @@ class TestBenchGenerator:
         output_port_names = self.output_port_name[:]
         output_port_names.sort()
 
-        loop = tester.loop(self._loop_size * len(input_port_names))
+        # print("Loop size: ", self._loop_size * len(input_port_names) + 1)
+        # loop = tester.loop(self._loop_size * len(input_port_names) + 1)
+        # for input_port_name in input_port_names:
+        #     value = loop.file_read(file_in)
+        #     loop.poke(self.circuit.interface[input_port_name], value)
+        #     # loop.eval()
+        # for output_port_name in output_port_names:
+        #     loop.file_write(file_out, self.circuit.interface[output_port_name])
+        # if valid_out is not None:
+        #     loop.file_write(valid_out,
+        #                     self.circuit.interface[self.valid_port_name])
+        # loop.step(2)
+
+        # # delay loop
+        # if self.delay > 0:
+        #     delay_loop = tester.loop(self.delay)
+        #     for input_port_name in input_port_names:
+        #         delay_loop.poke(self.circuit.interface[input_port_name], 0)
+        #         delay_loop.eval()
+        #     for output_port_name in output_port_names:
+        #         delay_loop.file_write(file_out, self.circuit.interface[output_port_name])
+        #     if valid_out is not None:
+        #         delay_loop.file_write(valid_out,
+        #                               self.circuit.interface[self.valid_port_name])
+        #     delay_loop.step(2)
+
+        # tester.file_close(file_in)
+        # tester.file_close(file_out)
+
+        loop = tester.loop(28*28*8 * len(input_port_names) + 1)
+        print("loop: ", (28*28*8 * len(input_port_names)) + 1)
         for input_port_name in input_port_names:
-            value = loop.file_read(file_in)
-            loop.poke(self.circuit.interface[input_port_name], value)
-            loop.eval()
-        for output_port_name in output_port_names:
-            loop.file_write(file_out, self.circuit.interface[output_port_name])
-        if valid_out is not None:
-            loop.file_write(valid_out,
-                            self.circuit.interface[self.valid_port_name])
+            num_1 = random.randrange(0, 256)
+            loop.poke(self.circuit.interface[input_port_name], num_1)
+            #loop.eval() # commented this out for realistic simulation accuracy
+
         loop.step(2)
 
-        # delay loop
-        if self.delay > 0:
-            delay_loop = tester.loop(self.delay)
-            for input_port_name in input_port_names:
-                delay_loop.poke(self.circuit.interface[input_port_name], 0)
-                delay_loop.eval()
-            for output_port_name in output_port_names:
-                delay_loop.file_write(file_out, self.circuit.interface[output_port_name])
-            if valid_out is not None:
-                delay_loop.file_write(valid_out,
-                                      self.circuit.interface[self.valid_port_name])
-            delay_loop.step(2)
-
-        tester.file_close(file_in)
-        tester.file_close(file_out)
         if valid_out is not None:
             tester.file_close(valid_out)
 
         # skip the compile and directly to run
-        tempdir = "temp/garnet"
+        tempdir = "temp_lassen/garnet"
         if not os.path.isdir(tempdir):
             os.makedirs(tempdir, exist_ok=True)
+
+        self.output_filename = os.path.join(tempdir, self.output_filename)
+
+        copy_file(self.input_filename,
+                      os.path.join(tempdir, self.input_filename))
         # copy files over
         if self.use_xcelium:
             # coreir always outputs as verilog even though we have system-
@@ -389,6 +406,7 @@ class TestBenchGenerator:
                       os.path.join(tempdir, os.path.basename(genesis_verilog)))
 
         if self.use_xcelium:
+            clk_period = 1.1
             verilogs = list(glob.glob(os.path.join(tempdir, "*.v")))
             verilogs += list(glob.glob(os.path.join(tempdir, "*.sv")))
             verilog_libraries = [os.path.basename(f) for f in verilogs]
@@ -406,8 +424,10 @@ class TestBenchGenerator:
                                    # num_cycles is an experimental feature
                                    # need to be merged in fault
                                    num_cycles=1000000,
+                                   clock_step_delay=(clk_period / 2.0),
+                                   timescale="1ns/1ps",
                                    no_warning=True,
-                                   dump_vcd=False,
+                                   dump_vcd=True,
                                    include_verilog_libraries=verilog_libraries,
                                    directory=tempdir)
         else:
@@ -479,4 +499,4 @@ if __name__ == "__main__":
 
     test = TestBenchGenerator(args)
     test.test()
-    test.compare()
+    # test.compare()

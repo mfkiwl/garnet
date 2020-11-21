@@ -16,7 +16,7 @@ import tempfile
 from memory_core.memory_mode import Mode as MemoryMode
 import copy
 
-DSE = True
+DSE = False
 
 family = PyFamily()
 
