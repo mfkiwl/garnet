@@ -53,6 +53,12 @@ def copy_file(src_filename, dst_filename, override=False):
     shutil.copy2(src_filename, dst_filename)
 
 def generate_testbench(PE, bitstream_json):
+    # detect the environment
+    if shutil.which("xrun"):
+        use_xcelium = True
+    else:
+        use_xcelium = False
+
     arch_fc = PE["fc"]
     chip_size = 16
     interconnect = create_cgra(chip_size, chip_size, IOSide.North,
@@ -68,6 +74,8 @@ def generate_testbench(PE, bitstream_json):
     print("Created interconnect circuit")
     tester = BasicTester(circuit, circuit.clk, circuit.reset)
     print("Created Tester")
+    if self.use_xcelium:
+        tester.zero_inputs()
     tester.circuit.clk = 0
     tester.reset()
     # set the PE core
@@ -100,11 +108,11 @@ def generate_testbench(PE, bitstream_json):
 
     _loop_size = os.path.getsize(bitstream_json["input_filename"])
 
-    loop = tester.loop(_loop_size * len(input_port_names))
+    loop = tester.loop(_loop_size * len(input_port_names) + 1)
     for input_port_name in input_port_names:
         value = loop.file_read(file_in)
         loop.poke(circuit.interface[input_port_name], value)
-        loop.eval()
+        #loop.eval() # commented this out for realistic simulation accuracy
     for output_port_name in output_port_names:
         loop.file_write(file_out, circuit.interface[output_port_name])
 
@@ -118,10 +126,14 @@ def generate_testbench(PE, bitstream_json):
     if not os.path.isdir(tempdir):
         os.makedirs(tempdir, exist_ok=True)
     # copy files over
-    
-    copy_file("garnet.v",
-                os.path.join(tempdir, "Interconnect.v"))
-
+    if self.use_xcelium:
+        # coreir always outputs as verilog even though we have system-
+        # verilog component
+        copy_file("garnet.v",
+                  os.path.join(tempdir, "Interconnect.sv"))
+    else:
+        copy_file("garnet.v",
+                  os.path.join(tempdir, "Interconnect.v"))
 
     base_dir = os.path.abspath(os.path.dirname(__file__))
     # cad_dir = "/cad/synopsys/dc_shell/J-2014.09-SP3/dw/sim_ver/"
@@ -139,14 +151,45 @@ def generate_testbench(PE, bitstream_json):
                     os.path.join(tempdir, os.path.basename(genesis_verilog)))
 
  
+    if self.use_xcelium:
+        # Check for clock period override in env (mflowgen)
+        clk_period = 1.1
+        clk_period_env = os.getenv("clock_period")
+        if clk_period_env is not None:
+            clk_period = float(clk_period_env)
 
-    verilator_lib = os.path.join(tempdir, "obj_dir", "VGarnet__ALL.a")
-    skip_build = os.path.isfile(verilator_lib)
-    tester.compile_and_run(target="verilator",
-                            skip_compile=True,
-                            skip_verilator=skip_build,
-                            directory=tempdir,
-                            flags=["-Wno-fatal"])
+        verilogs = list(glob.glob(os.path.join(tempdir, "*.v")))
+        verilogs += list(glob.glob(os.path.join(tempdir, "*.sv")))
+        verilog_libraries = [os.path.basename(f) for f in verilogs]
+        # sanity check since we just copied
+        assert "Interconnect.sv" in verilog_libraries
+        if "Interconnect.v" in verilog_libraries:
+            # ncsim will freak out if the system verilog file has .v
+            # extension
+            verilog_libraries.remove("Interconnect.v")
+            os.remove(os.path.join(tempdir, "Interconnect.v"))
+        tester.compile_and_run(target="system-verilog",
+                               skip_compile=True,
+                               skip_run=args.tb_only,
+                               simulator="xcelium",
+                               # num_cycles is an experimental feature
+                               # need to be merged in fault
+                               num_cycles=1000000,
+                               no_warning=True,
+                               dump_vcd=True,
+                               clock_step_delay=(clk_period / 2.0),
+                               timescale="1ns/1ps",
+                               include_verilog_libraries=verilog_libraries,
+                               directory=tempdir)
+
+    else:
+        verilator_lib = os.path.join(tempdir, "obj_dir", "VGarnet__ALL.a")
+        skip_build = os.path.isfile(verilator_lib)
+        tester.compile_and_run(target="verilator",
+                                skip_compile=True,
+                                skip_verilator=skip_build,
+                                directory=tempdir,
+                                    flags=["-Wno-fatal"])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
