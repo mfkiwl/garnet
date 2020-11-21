@@ -5,6 +5,8 @@ from lassen.alu import ALU_t, Signed_t
 from lassen.asm import inst
 from hwtypes import BitVector
 from peak.family import PyFamily
+from peak_gen.asm import asm_arch_closure
+from peak_gen.arch import read_arch
 
 import json
 import os
@@ -14,11 +16,19 @@ import tempfile
 from memory_core.memory_mode import Mode as MemoryMode
 import copy
 
+DSE = True
+
 family = PyFamily()
-ALU, Signed = ALU_t, Signed_t
-Mode = Mode_t
-LUT = LUT_t_fc(family)
-Cond = Cond_t
+
+if DSE:
+    arch = read_arch("../DSEGraphAnalysis/outputs/PE.json")
+    asm_fc = asm_arch_closure(arch)
+    gen_inst = asm_fc(family)
+else:
+    ALU, Signed = ALU_t, Signed_t
+    Mode = Mode_t
+    LUT = LUT_t_fc(family)
+    Cond = Cond_t
 
 # LUT constants
 B0 = BitVector[8]([0,1,0,1,0,1,0,1])
@@ -104,11 +114,11 @@ __PORT_RENAME = {
     "data.in.0": "data0",
     "data.in.1": "data1",
     "data.in.2": "data2",
-    "data.out": "alu_res",
+    "data.out": "O0",
     "bit.in.0": "bit0",
     "bit.in.1": "bit1",
     "bit.in.2": "bit2",
-    "bit.out": "alu_res_p",
+    "bit.out": "O1",
 }
 
 
@@ -148,6 +158,7 @@ def convert2netlist(connections):
     skip_list.add("clk")
     skip_list.add("reset")
     skip_list.add("CLK")
+    skip_list.add("chain_chain")
     # skip_list.add("inst")
     for i in range(len(connections)):
         if i in skip_index:
@@ -194,6 +205,7 @@ def convert2netlist(connections):
         netlists.append(net)
     print("INFO: before conversion connections", len(connections),
           "after conversion netlists:", len(netlists))
+    
     return netlists
 
 
@@ -236,7 +248,6 @@ def determine_track_bus(netlists, id_to_name):
 def parse_and_pack_netlist(netlist_filename, fold_reg=True):
     connections, instances = read_netlist_json(netlist_filename)
     netlists, name_to_id = generate_netlists(connections, instances)
-    
     pes = set()
     ios = set()
     mems = set()
@@ -260,7 +271,6 @@ def parse_and_pack_netlist(netlist_filename, fold_reg=True):
     print("Before packing:")
     print("PE:", len(pes), "IO:", len(ios), "MEM:", len(mems), "REG:",
           len(regs))
-
     before_packing = len(netlists)
     netlists, folded_blocks, changed_pe = pack_netlists(netlists, name_to_id,
                                                         fold_reg=fold_reg)
@@ -306,7 +316,7 @@ def generate_netlists(connections, instances):
     h_edge_count = 0
     netlists = {}
     for conn in connections:
-        if conn[0] == "self.clk":
+        if conn[0] == "self.clk" or conn[0] == "self.hw_kernel_stencil_op_hcompute_hw_kernel_global_wrapper_stencil_read.0":
             continue
         edge_id = "e" + str(h_edge_count)
         h_edge_count += 1
@@ -315,10 +325,12 @@ def generate_netlists(connections, instances):
             raw_names = v.split(".")
             blk_name = raw_names[0]
             if blk_name not in name_to_id:
+                print(conn)
                 continue
             blk_id = name_to_id[blk_name]
             port = ".".join(raw_names[1:])
             # FIXME: don't care about these so far
+            print(port)
             if port == "cg_en" or port == "clk_en":
                 continue
             if port == "data.in.0" or port == "data0" or port == "in0":
@@ -353,6 +365,10 @@ def generate_netlists(connections, instances):
                 port = "alu_res"
             elif port == "res_p":
                 port = "res_p"
+            elif port == "O0":
+                port = "O0"
+            elif port == "O1":
+                port = "O1"
             elif port == "io2f_16" or port == "tofab":
                 port = "io2f_16"
             elif port == "f2io_16" or port == "fromfab":
@@ -581,13 +597,18 @@ def read_netlist_json(netlist_filename):
                 instances[conn[1].split(".")[0]]["genargs"] = "const"
             elif inst == "63'h0000006fffe8002b":
                 instances[conn[1].split(".")[0]]["genargs"] = "mul"
+            elif inst == "22'h100000":
+                instances[conn[1].split(".")[0]]["genargs"] = "dse_mul"
+            elif inst == "22'h080000":
+                instances[conn[1].split(".")[0]]["genargs"] = "dse_mul_add"
+            elif inst == "22'h0c0000":
+                instances[conn[1].split(".")[0]]["genargs"] = "dse_add"
+            elif inst == "22'h000000":
+                instances[conn[1].split(".")[0]]["genargs"] = "dse_const"
             else:
-                print(inst)
-                exit()
+                print("Unrecognied", inst)
             instances.pop(conn[0].split(".")[0])
             connections.remove(conn)
-             
-
     return connections, instances
 
 
@@ -752,7 +773,7 @@ def get_tile_pins(blk_id, op, folded_block, instances, changed_pe,
         lut_pins = get_lut_pins(instances[instance_name])
         pins = ["const{0}_{0}".format(i) for i in lut_pins]
         assert len(pins) == 3
-    elif op[:3] == "mux" or op[:3] == "sel":
+    elif op[:3] == "mux" or op[:3] == "sel" or DSE:
         pins = [None, None, None]
     else:
         pins = [None, None]
@@ -763,12 +784,14 @@ def get_tile_pins(blk_id, op, folded_block, instances, changed_pe,
             pin_name = conn.split(".")[0]
             pin_port = ".".join(conn.split(".")[1:])
             if pin_name == instance_name and "out" not in pin_port:
+           
                 if (op == "mux" or op == "sel") and "bit.in.0" == pin_port:
                     index = 2
                 elif pin_port != "in":
                     index = int(pin_port[-1])
                 else:
                     index = 0
+
                 pins[index] = "wire"
 
 
@@ -794,17 +817,33 @@ def get_tile_pins(blk_id, op, folded_block, instances, changed_pe,
                 index = int(port[-1])
             assert (pin_name is not None)
             pins[index] = pin_name
-    if blk_id in changed_pe or op == "const":
-        pins[0] = "reg"
-        pins[1] = "const0_0"
 
-    if "bitconst" in op:
-        val = op.split("bitconst")[1]
-        pins[0] = "reg"
-        pins[1] = f"const{val}_{val}"
+    if DSE:
 
-    if op == "abs":
-        pins[1] = "const0_0"
+        if blk_id in changed_pe or op == "dse_const":
+            pins[0] = "reg"
+            pins[1] = "reg"
+            pins[2] = "reg"
+
+        if "bitconst" in op:
+            pins[0] = "reg"
+            pins[1] = "reg"
+            pins[2] = "reg"
+
+        if pins[2] == None:
+            pins[2] = "reg"
+    else:
+        if blk_id in changed_pe or op == "const":
+            pins[0] = "reg"
+            pins[1] = "const0_0"
+
+        if "bitconst" in op:
+            val = op.split("bitconst")[1]
+            pins[0] = "reg"
+            pins[1] = f"const{val}_{val}"
+
+        if op == "abs":
+            pins[1] = "const0_0"
 
     # sanity check
     for pin in pins:
@@ -833,9 +872,9 @@ def port_rename(netlist):
                     port = "io2f_1"
             elif blk_id[0] == "p":
                 if port == "out":
-                    port = "alu_res"
+                    port = "O0"
                 elif port == "outb":
-                    port = "res_p"
+                    port = "O1"
             elif blk_id[0] == "m":
                 if port == "rdata":
                     port = "data_out_0"
@@ -970,17 +1009,20 @@ def insert_valid(id_to_name, netlist, bus):
             if blk_id[0] in {"i", "I"} and "valid" in blk_name:
                 return
     # need to insert the const 1 bit net as well
-    alu_instr, _ = __get_alu_mapping("add")
-    lut = __get_lut_mapping("lutFF")
-    kargs = {}
-    kargs["cond"] = Cond.LUT
-    kargs["lut"] = lut
-    instr = inst(alu_instr, **kargs)
+    if DSE:
+        instr = gen_inst(const = [family.Bit(0), family.BitVector[16](0)])
+    else:
+        alu_instr, _ = __get_alu_mapping("add")
+        lut = __get_lut_mapping("lutFF")
+        kargs = {}
+        kargs["cond"] = Cond.LUT
+        kargs["lut"] = lut
+        instr = inst(alu_instr, **kargs)
     # adding a new pe block
     new_pe_blk = get_new_id("p", len(id_to_name), id_to_name)
     new_net_id = get_new_id("e", len(netlist), netlist)
     new_io_blk = get_new_id("i", len(id_to_name), id_to_name)
-    netlist[new_net_id] = [(new_pe_blk, "res_p"), (new_io_blk, "f2io_1")]
+    netlist[new_net_id] = [(new_pe_blk, "O1"), (new_io_blk, "f2io_1")]
     id_to_name[new_pe_blk] = "always_valid"
     id_to_name[new_io_blk] = "io1_valid"
     bus[new_net_id] = 1
@@ -1118,6 +1160,7 @@ def insert_valid_delay(id_to_name, instance_to_instr, netlist, bus):
                 new_reg_id = get_new_id("p", len(id_to_name), id_to_name)
                 id_to_name[new_reg_id] = "reg_valid_delay"
                 # this is a lut as well with delay on one side
+
                 alu_instr, _ = __get_alu_mapping("add")
                 kargs = {}
                 kargs["cond"] = Cond.LUT
@@ -1139,7 +1182,7 @@ def insert_valid_delay(id_to_name, instance_to_instr, netlist, bus):
                 instance_to_instr[id_to_name[new_pe_id]] = instr
 
                 new_net_id = get_new_id("e", len(netlist), netlist)
-                netlist[new_net_id] = [(new_pe_id, "res_p"), (new_reg_id, "bit0")]
+                netlist[new_net_id] = [(new_pe_id, "O1"), (new_reg_id, "bit0")]
                 bus[new_net_id] = 1
 
                 net[1 + idx] = (new_pe_id, "bit0")
@@ -1165,7 +1208,7 @@ def insert_valid_delay(id_to_name, instance_to_instr, netlist, bus):
     assert new_reg_id is not None
     new_net_id = get_new_id("e", len(netlist), netlist)
     print("adding delay reg net", new_net_id)
-    netlist[new_net_id] = [(new_reg_id, "res_p"), io_valid]
+    netlist[new_net_id] = [(new_reg_id, "O1"), io_valid]
     bus[new_net_id] = 1
 
 
@@ -1253,7 +1296,7 @@ def map_app(pre_map):
                                            instr)
                     instr["chain_en"] = 1
                     instr["chain_idx"] = idx
-        else:
+        elif not DSE:
             ra_mode, ra_value = get_mode(pins[0])
             rb_mode, rb_value = get_mode(pins[1])
 
@@ -1305,7 +1348,21 @@ def map_app(pre_map):
                 elif tile_op == "neq":
                     kargs["cond"] = Cond.Z_n
             kargs["signed"] = signed
+            
             instr = inst(alu_instr, **kargs)
+
+        else:
+     
+
+            if tile_op == "dse_const":
+                instr = gen_inst(mux_out = [family.BitVector[2](0)])
+            elif tile_op == "dse_mul":
+                instr = gen_inst(mux_out = [family.BitVector[2](2)])
+            elif tile_op == "dse_add":
+                instr = gen_inst(mux_out = [family.BitVector[2](1)], mux_in0 = [family.BitVector[1](1)])
+            elif tile_op == "dse_mul_add":
+                instr = gen_inst(mux_out = [family.BitVector[2](1)])
+
         instance_to_instr[name] = instr
 
     netlist = port_rename(netlist)

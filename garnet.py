@@ -33,6 +33,7 @@ from metamapper.irs.coreir import gen_CoreIRNodes
 from metamapper.node import Nodes, Constant
 import metamapper.peak_util as putil
 from metamapper.coreir_mapper import Mapper
+import archipelago.io
 
 # set the debug mode to false to speed up construction
 set_debug_mode(False)
@@ -307,6 +308,8 @@ class Garnet(Generator):
                                                        placement,
                                                        id_to_name)
         delay = 1 if has_rom(id_to_name) else 0
+        # also write out the meta file
+        archipelago.io.dump_meta_file(halide_src, "design", os.path.dirname(halide_src))
         return bitstream, (input_interface, output_interface, reset, valid, en,
                            delay)
 
@@ -397,7 +400,6 @@ def main():
     if args.verilog:
         garnet_circ = garnet.circuit()
         magma.compile("garnet", garnet_circ, output="coreir-verilog",
-                      coreir_libs={"float_CW"},
                       passes = ["rungenerators", "inline_single_instances", "clock_gate"],
                       disable_ndarray=True,
                       inline=False)
