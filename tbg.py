@@ -277,10 +277,10 @@ class TestBenchGenerator:
         # now load the file up
 
         # file in
-        # file_in = tester.file_open(self.input_filename, "r",
-        #                            chunk_size=self._input_size)
-        # file_out = tester.file_open(self.output_filename, "w",
-        #                             chunk_size=self._output_size)
+        file_in = tester.file_open("input.raw", "r",
+                                   chunk_size=self._input_size)
+        file_out = tester.file_open("output.raw", "w",
+                                    chunk_size=self._output_size)
         if len(self.valid_port_name) > 0:
             valid_out = tester.file_open(f"{self.output_filename}.valid", "w")
         else:
@@ -319,42 +319,39 @@ class TestBenchGenerator:
         output_port_names = self.output_port_name[:]
         output_port_names.sort()
 
-        # print("Loop size: ", self._loop_size * len(input_port_names) + 1)
-        # loop = tester.loop(self._loop_size * len(input_port_names) + 1)
-        # for input_port_name in input_port_names:
-        #     value = loop.file_read(file_in)
-        #     loop.poke(self.circuit.interface[input_port_name], value)
-        #     # loop.eval()
-        # for output_port_name in output_port_names:
-        #     loop.file_write(file_out, self.circuit.interface[output_port_name])
-        # if valid_out is not None:
-        #     loop.file_write(valid_out,
-        #                     self.circuit.interface[self.valid_port_name])
-        # loop.step(2)
-
-        # # delay loop
-        # if self.delay > 0:
-        #     delay_loop = tester.loop(self.delay)
-        #     for input_port_name in input_port_names:
-        #         delay_loop.poke(self.circuit.interface[input_port_name], 0)
-        #         delay_loop.eval()
-        #     for output_port_name in output_port_names:
-        #         delay_loop.file_write(file_out, self.circuit.interface[output_port_name])
-        #     if valid_out is not None:
-        #         delay_loop.file_write(valid_out,
-        #                               self.circuit.interface[self.valid_port_name])
-        #     delay_loop.step(2)
-
-        # tester.file_close(file_in)
-        # tester.file_close(file_out)
-
         loop = tester.loop(28*28*8 * len(input_port_names) + 1)
-        print("loop: ", (28*28*8 * len(input_port_names)) + 1)
+        print("loop:", 28*28*8 * len(input_port_names) + 1)
         for input_port_name in input_port_names:
-            num_1 = random.randrange(0, 256)
-            loop.poke(self.circuit.interface[input_port_name], num_1)
-            #loop.eval() # commented this out for realistic simulation accuracy
+            value = loop.file_read(file_in)
+            loop.poke(self.circuit.interface[input_port_name], value)
+            # loop.eval()
+        for output_port_name in output_port_names:
+            loop.file_write(file_out, self.circuit.interface[output_port_name])
+        if valid_out is not None:
+            loop.file_write(valid_out,
+                            self.circuit.interface[self.valid_port_name])
+        # delay loop
+        if self.delay > 0:
+            delay_loop = tester.loop(self.delay)
+            for input_port_name in input_port_names:
+                delay_loop.poke(self.circuit.interface[input_port_name], 0)
+                delay_loop.eval()
+            for output_port_name in output_port_names:
+                delay_loop.file_write(file_out, self.circuit.interface[output_port_name])
+            if valid_out is not None:
+                delay_loop.file_write(valid_out,
+                                      self.circuit.interface[self.valid_port_name])
+            delay_loop.step(2)
 
+        tester.file_close(file_in)
+        tester.file_close(file_out)
+
+        #loop = tester.loop(28*28*8 * len(input_port_names) + 1)
+        #print("loop: ", (28*28*8 * len(input_port_names)) + 1)
+        #for input_port_name in input_port_names:
+        #    num_1 = random.randrange(0, 256)
+        #    loop.poke(self.circuit.interface[input_port_name], num_1)
+        #    #loop.eval() # commented this out for realistic simulation accuracy
         loop.step(2)
 
         if valid_out is not None:
