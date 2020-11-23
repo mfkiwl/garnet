@@ -281,7 +281,14 @@ class Garnet(Generator):
     def compile(self, halide_src, unconstrained_io=False, compact=False):
         # id_to_name, instance_to_instr, netlist, bus = self.metamap(halide_src)
         id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
-        print(netlist)
+        print("netlist")
+        for net in netlist.items(): print(net)
+        print("id_to_name")
+        for net in id_to_name.items(): print(net)
+        print("instance_to_instr")
+        for net in instance_to_instr.items(): print(net)
+        print("bus")
+        for net in bus.items(): print(net)        
         app_dir = os.path.dirname(halide_src)
         if unconstrained_io:
             fixed_io = None

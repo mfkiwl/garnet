@@ -21,7 +21,7 @@ DSE = False
 family = PyFamily()
 
 if DSE:
-    arch = read_arch("../DSEGraphAnalysis/outputs/PE.json")
+    arch = read_arch("PE.json")
     asm_fc = asm_arch_closure(arch)
     gen_inst = asm_fc(family)
 else:
@@ -155,10 +155,10 @@ def convert2netlist(connections):
     skip_index = set()
 
     skip_list = set()
-    skip_list.add("clk")
-    skip_list.add("reset")
-    skip_list.add("CLK")
-    skip_list.add("chain_chain")
+    # skip_list.add(".clk_en")
+    skip_list.add(".rst_n")
+    # skip_list.add(".CLK")
+    skip_list.add(".chain_chain_en")
     # skip_list.add("inst")
     for i in range(len(connections)):
         if i in skip_index:
@@ -174,6 +174,7 @@ def convert2netlist(connections):
                 skip_conn = True
 
         if skip_conn:
+            print("skipped:", conn)
             continue
 
         for j in range(len(connections)):
@@ -205,7 +206,6 @@ def convert2netlist(connections):
         netlists.append(net)
     print("INFO: before conversion connections", len(connections),
           "after conversion netlists:", len(netlists))
-    
     return netlists
 
 
@@ -239,6 +239,9 @@ def determine_track_bus(netlists, id_to_name):
                 bus = 1
                 break
             elif "valid" in port:
+                bus = 1
+                break
+            elif "rst_n" in port:
                 bus = 1
                 break
         track_mode[net_id] = bus
@@ -316,7 +319,7 @@ def generate_netlists(connections, instances):
     h_edge_count = 0
     netlists = {}
     for conn in connections:
-        if conn[0] == "self.clk" or conn[0] == "self.hw_kernel_stencil_op_hcompute_hw_kernel_global_wrapper_stencil_read.0":
+        if conn[0] == "self.clk":
             continue
         edge_id = "e" + str(h_edge_count)
         h_edge_count += 1
@@ -325,15 +328,15 @@ def generate_netlists(connections, instances):
             raw_names = v.split(".")
             blk_name = raw_names[0]
             if blk_name not in name_to_id:
-                print(conn)
+                print("blk not in name-to-id:", conn)
                 continue
             blk_id = name_to_id[blk_name]
             port = ".".join(raw_names[1:])
             # FIXME: don't care about these so far
-            print(port)
+            # print(port)
             if port == "cg_en" or port == "clk_en":
                 continue
-            if port == "data.in.0" or port == "data0" or port == "in0":
+            if port == "data.in.0"  or port == "data0" or port == "in0":
                 port = "data0"
             elif port == "data.in.1" or port == "data1" or port == "in1":
                 port = "data1"
@@ -373,6 +376,8 @@ def generate_netlists(connections, instances):
                 port = "io2f_16"
             elif port == "f2io_16" or port == "fromfab":
                 port = "f2io_16"
+            else:
+                print("port not recognized:", port)
             hyper_edge.append((blk_id, port))
         netlists[edge_id] = hyper_edge
     return netlists, name_to_id
@@ -539,10 +544,12 @@ def change_name_to_id(instances):
             if attrs["modref"] == u"corebit.const":
                 blk_type = "b"
             elif attrs["modref"] == u"cgralib.BitIO":
+                print("I/O block", name, attrs)
                 blk_type = "i"
             elif attrs["modref"] == "alu_ns.PE" or attrs["modref"] == "lassen.PE" or attrs["modref"] == 'global.WrappedPE':
                 blk_type = "p"
             elif attrs["modref"] == "alu_ns.io16" or attrs["modref"] == "lassen.io16":
+                print("I/O block", name, attrs)
                 blk_type = "I"
             elif attrs["modref"] == "corebit.reg":
                 blk_type = "r"
@@ -554,6 +561,7 @@ def change_name_to_id(instances):
             if instance_type == "cgralib.PE":
                 blk_type = "p"
             elif instance_type == "cgralib.IO":
+                print("I/O block", name, attrs)
                 blk_type = "I"
             elif instance_type == "cgralib.Mem":
                 blk_type = "m"
@@ -1006,8 +1014,9 @@ def insert_valid(id_to_name, netlist, bus):
             continue
         for blk_id, port in net[1:]:
             blk_name = id_to_name[blk_id]
-            if blk_id[0] in {"i", "I"} and "valid" in blk_name:
-                return
+            # if blk_id[0] in {"i", "I"} and "valid" in blk_name:
+                # breakpoint()
+                # return
     # need to insert the const 1 bit net as well
     if DSE:
         instr = gen_inst(const = [family.Bit(0), family.BitVector[16](0)])
@@ -1362,6 +1371,12 @@ def map_app(pre_map):
                 instr = gen_inst(mux_out = [family.BitVector[2](1)], mux_in0 = [family.BitVector[1](1)])
             elif tile_op == "dse_mul_add":
                 instr = gen_inst(mux_out = [family.BitVector[2](1)])
+            elif tile_op == "bitconst0":
+                instr = gen_inst(const = [family.Bit(0), family.BitVector[16](0)])
+            elif tile_op == "bitconst1":
+                instr = gen_inst(const = [family.Bit(1), family.BitVector[16](0)])
+            else:
+                print(tile_op)
 
         instance_to_instr[name] = instr
 
