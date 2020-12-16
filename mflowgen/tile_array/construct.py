@@ -10,6 +10,7 @@ import os
 import sys
 
 from mflowgen.components import Graph, Step
+from shutil import which
 
 def construct():
 
@@ -73,33 +74,44 @@ def construct():
 
   # Default steps
 
-  info         = Step( 'info',                          default=True )
-  #constraints  = Step( 'constraints',                   default=True )
-  dc           = Step( 'synopsys-dc-synthesis',         default=True )
-  iflow        = Step( 'cadence-innovus-flowsetup',     default=True )
-  init         = Step( 'cadence-innovus-init',          default=True )
-  power        = Step( 'cadence-innovus-power',         default=True )
-  place        = Step( 'cadence-innovus-place',         default=True )
-  cts          = Step( 'cadence-innovus-cts',           default=True )
-  postcts_hold = Step( 'cadence-innovus-postcts_hold',  default=True )
-  route        = Step( 'cadence-innovus-route',         default=True )
-  postroute    = Step( 'cadence-innovus-postroute',     default=True )
-  signoff      = Step( 'cadence-innovus-signoff',       default=True )
-  pt_signoff   = Step( 'synopsys-pt-timing-signoff',    default=True )
-  genlibdb     = Step( 'synopsys-ptpx-genlibdb',        default=True )
-  drc          = Step( 'mentor-calibre-drc',            default=True )
-  lvs          = Step( 'mentor-calibre-lvs',            default=True )
-  debugcalibre = Step( 'cadence-innovus-debug-calibre', default=True )
-  vcs_sim      = Step( 'synopsys-vcs-sim',              default=True )
+  info           = Step( 'info',                           default=True )
+  #constraints    = Step( 'constraints',                    default=True )
+  #dc             = Step( 'synopsys-dc-synthesis',          default=True )
+  synth          = Step( 'cadence-genus-synthesis',        default=True )
+  iflow          = Step( 'cadence-innovus-flowsetup',      default=True )
+  init           = Step( 'cadence-innovus-init',           default=True )
+  power          = Step( 'cadence-innovus-power',          default=True )
+  place          = Step( 'cadence-innovus-place',          default=True )
+  cts            = Step( 'cadence-innovus-cts',            default=True )
+  postcts_hold   = Step( 'cadence-innovus-postcts_hold',   default=True )
+  route          = Step( 'cadence-innovus-route',          default=True )
+  postroute      = Step( 'cadence-innovus-postroute',      default=True )
+  postroute_hold = Step( 'cadence-innovus-postroute_hold', default=True )
+  signoff        = Step( 'cadence-innovus-signoff',        default=True )
+  #pt_signoff     = Step( 'synopsys-pt-timing-signoff',     default=True )
+  #genlibdb       = Step( 'synopsys-ptpx-genlibdb',         default=True )
+  genlib         = Step( 'cadence-genus-genlib',           default=True )
+  if which("calibre") is not None:
+      drc            = Step( 'mentor-calibre-drc',             default=True )
+      lvs            = Step( 'mentor-calibre-lvs',             default=True )
+  else:
+      drc            = Step( 'cadence-pegasus-drc',            default=True )
+      lvs            = Step( 'cadence-pegasus-lvs',            default=True )
+  debugcalibre   = Step( 'cadence-innovus-debug-calibre',   default=True )
+  vcs_sim        = Step( 'synopsys-vcs-sim',                default=True )
 
   # Add cgra tile macro inputs to downstream nodes
 
-  dc.extend_inputs( ['Tile_PE.db'] )
-  dc.extend_inputs( ['Tile_MemCore.db'] )
-  pt_signoff.extend_inputs( ['Tile_PE.db'] )
-  pt_signoff.extend_inputs( ['Tile_MemCore.db'] )
-  genlibdb.extend_inputs( ['Tile_PE.db'] )
-  genlibdb.extend_inputs( ['Tile_MemCore.db'] )
+  #dc.extend_inputs( ['Tile_PE.db'] )
+  synth.extend_inputs( ['Tile_PE_tt.lib'] )
+  #dc.extend_inputs( ['Tile_MemCore.db'] )
+  synth.extend_inputs( ['Tile_MemCore_tt.lib'] )
+  #pt_signoff.extend_inputs( ['Tile_PE.db'] )
+  #pt_signoff.extend_inputs( ['Tile_MemCore.db'] )
+  #genlibdb.extend_inputs( ['Tile_PE.db'] )
+  genlib.extend_inputs( ['Tile_PE_tt.lib'] )
+  #genlibdb.extend_inputs( ['Tile_MemCore.db'] )
+  genlib.extend_inputs( ['Tile_MemCore_tt.lib'] )
 
   # These steps need timing info for cgra tiles
 
@@ -131,7 +143,8 @@ def construct():
   lvs.extend_inputs( ['sram.spi'] )
 
   # Extra dc inputs
-  dc.extend_inputs( dc_postcompile.all_outputs() )
+  #dc.extend_inputs( dc_postcompile.all_outputs() )
+  #synth.extend_inputs( dc_postcompile.all_outputs() )
 
   # Add extra input edges to innovus steps that need custom tweaks
 
@@ -150,7 +163,8 @@ def construct():
   g.add_step( Tile_PE        )
   g.add_step( constraints    )
   g.add_step( dc_postcompile )
-  g.add_step( dc             )
+  #g.add_step( dc             )
+  g.add_step( synth             )
   g.add_step( iflow          )
   g.add_step( init           )
   g.add_step( custom_init    )
@@ -162,9 +176,11 @@ def construct():
   g.add_step( postcts_hold   )
   g.add_step( route          )
   g.add_step( postroute      )
+  g.add_step( postroute_hold )
   g.add_step( signoff        )
-  g.add_step( pt_signoff     )
-  g.add_step( genlibdb       )
+  #g.add_step( pt_signoff     )
+  #g.add_step( genlibdb       )
+  g.add_step( genlib       )
   g.add_step( drc            )
   g.add_step( custom_lvs     )
   g.add_step( lvs            )
@@ -179,18 +195,20 @@ def construct():
 
   # Connect by name
 
-  g.connect_by_name( adk,      dc           )
-  g.connect_by_name( adk,      iflow        )
-  g.connect_by_name( adk,      init         )
-  g.connect_by_name( adk,      power        )
-  g.connect_by_name( adk,      place        )
-  g.connect_by_name( adk,      cts          )
-  g.connect_by_name( adk,      postcts_hold )
-  g.connect_by_name( adk,      route        )
-  g.connect_by_name( adk,      postroute    )
-  g.connect_by_name( adk,      signoff      )
-  g.connect_by_name( adk,      drc          )
-  g.connect_by_name( adk,      lvs          )
+  #g.connect_by_name( adk,      dc           )
+  g.connect_by_name( adk,      synth           )
+  g.connect_by_name( adk,      iflow          )
+  g.connect_by_name( adk,      init           )
+  g.connect_by_name( adk,      power          )
+  g.connect_by_name( adk,      place          )
+  g.connect_by_name( adk,      cts            )
+  g.connect_by_name( adk,      postcts_hold   )
+  g.connect_by_name( adk,      route          )
+  g.connect_by_name( adk,      postroute      )
+  g.connect_by_name( adk,      postroute_hold )
+  g.connect_by_name( adk,      signoff        )
+  g.connect_by_name( adk,      drc            )
+  g.connect_by_name( adk,      lvs            )
 
   # In our CGRA, the tile pattern is:
   # PE PE PE Mem PE PE PE Mem ...
@@ -201,87 +219,110 @@ def construct():
       # inputs to Tile_MemCore
       g.connect_by_name( rtl, Tile_MemCore )
       # outputs from Tile_MemCore
-      g.connect_by_name( Tile_MemCore,      dc           )
-      g.connect_by_name( Tile_MemCore,      iflow        )
-      g.connect_by_name( Tile_MemCore,      init         )
-      g.connect_by_name( Tile_MemCore,      power        )
-      g.connect_by_name( Tile_MemCore,      place        )
-      g.connect_by_name( Tile_MemCore,      cts          )
-      g.connect_by_name( Tile_MemCore,      postcts_hold )
-      g.connect_by_name( Tile_MemCore,      route        )
-      g.connect_by_name( Tile_MemCore,      postroute    )
-      g.connect_by_name( Tile_MemCore,      signoff      )
-      g.connect_by_name( Tile_MemCore,      pt_signoff   )
-      g.connect_by_name( Tile_MemCore,      genlibdb     )
-      g.connect_by_name( Tile_MemCore,      drc          )
-      g.connect_by_name( Tile_MemCore,      lvs          )
+      #g.connect_by_name( Tile_MemCore,      dc             )
+      g.connect_by_name( Tile_MemCore,      synth          )
+      g.connect_by_name( Tile_MemCore,      iflow          )
+      g.connect_by_name( Tile_MemCore,      init           )
+      g.connect_by_name( Tile_MemCore,      power          )
+      g.connect_by_name( Tile_MemCore,      place          )
+      g.connect_by_name( Tile_MemCore,      cts            )
+      g.connect_by_name( Tile_MemCore,      postcts_hold   )
+      g.connect_by_name( Tile_MemCore,      route          )
+      g.connect_by_name( Tile_MemCore,      postroute      )
+      g.connect_by_name( Tile_MemCore,      postroute_hold )
+      g.connect_by_name( Tile_MemCore,      signoff        )
+      #g.connect_by_name( Tile_MemCore,      pt_signoff     )
+      #g.connect_by_name( Tile_MemCore,      genlibdb       )
+      g.connect_by_name( Tile_MemCore,      genlib         )
+      g.connect_by_name( Tile_MemCore,      drc            )
+      g.connect_by_name( Tile_MemCore,      lvs            )
       # These rules LVS BOX the SRAM macro, so they should
       # only be used if memory tile is present
-      g.connect_by_name( custom_lvs,        lvs          )
-      g.connect_by_name( Tile_MemCore,      vcs_sim      )
+      g.connect_by_name( custom_lvs,        lvs            )
+      g.connect_by_name( Tile_MemCore,      vcs_sim        )
 
   
   # inputs to Tile_PE
   g.connect_by_name( rtl, Tile_PE )
   # outputs from Tile_PE
-  g.connect_by_name( Tile_PE,      dc           )
-  g.connect_by_name( Tile_PE,      iflow        )
-  g.connect_by_name( Tile_PE,      init         )
-  g.connect_by_name( Tile_PE,      power        )
-  g.connect_by_name( Tile_PE,      place        )
-  g.connect_by_name( Tile_PE,      cts          )
-  g.connect_by_name( Tile_PE,      postcts_hold )
-  g.connect_by_name( Tile_PE,      route        )
-  g.connect_by_name( Tile_PE,      postroute    )
-  g.connect_by_name( Tile_PE,      signoff      )
-  g.connect_by_name( Tile_PE,      pt_signoff   )
-  g.connect_by_name( Tile_PE,      genlibdb     )
-  g.connect_by_name( Tile_PE,      drc          )
-  g.connect_by_name( Tile_PE,      lvs          )
+  #g.connect_by_name( Tile_PE,      dc             )
+  g.connect_by_name( Tile_PE,      synth          )
+  g.connect_by_name( Tile_PE,      iflow          )
+  g.connect_by_name( Tile_PE,      init           )
+  g.connect_by_name( Tile_PE,      power          )
+  g.connect_by_name( Tile_PE,      place          )
+  g.connect_by_name( Tile_PE,      cts            )
+  g.connect_by_name( Tile_PE,      postcts_hold   )
+  g.connect_by_name( Tile_PE,      route          )
+  g.connect_by_name( Tile_PE,      postroute      )
+  g.connect_by_name( Tile_PE,      postroute_hold )
+  g.connect_by_name( Tile_PE,      signoff        )
+  #g.connect_by_name( Tile_PE,      pt_signoff     )
+  #g.connect_by_name( Tile_PE,      genlibdb       )
+  g.connect_by_name( Tile_PE,      genlib         )
+  g.connect_by_name( Tile_PE,      drc            )
+  g.connect_by_name( Tile_PE,      lvs            )
 
-  g.connect_by_name( rtl,            dc        )
-  g.connect_by_name( constraints,    dc        )
-  g.connect_by_name( dc_postcompile, dc        )
+  #g.connect_by_name( rtl,            dc        )
+  #g.connect_by_name( constraints,    dc        )
+  #g.connect_by_name( dc_postcompile, dc        )
 
-  g.connect_by_name( dc,       iflow        )
-  g.connect_by_name( dc,       init         )
-  g.connect_by_name( dc,       power        )
-  g.connect_by_name( dc,       place        )
-  g.connect_by_name( dc,       cts          )
+  #g.connect_by_name( dc,       iflow        )
+  #g.connect_by_name( dc,       init         )
+  #g.connect_by_name( dc,       power        )
+  #g.connect_by_name( dc,       place        )
+  #g.connect_by_name( dc,       cts          )
 
-  g.connect_by_name( iflow,    init         )
-  g.connect_by_name( iflow,    power        )
-  g.connect_by_name( iflow,    place        )
-  g.connect_by_name( iflow,    cts          )
-  g.connect_by_name( iflow,    postcts_hold )
-  g.connect_by_name( iflow,    route        )
-  g.connect_by_name( iflow,    postroute    )
-  g.connect_by_name( iflow,    signoff      )
+
+  g.connect_by_name( rtl,            synth        )
+  g.connect_by_name( rtl,            synth        )
+  g.connect_by_name( constraints,    synth        )
+  #g.connect_by_name( dc_postcompile, synth        )
+
+  g.connect_by_name( synth,       iflow        )
+  g.connect_by_name( synth,       init         )
+  g.connect_by_name( synth,       power        )
+  g.connect_by_name( synth,       place        )
+  g.connect_by_name( synth,       cts          )
+
+  g.connect_by_name( iflow,    init           )
+  g.connect_by_name( iflow,    power          )
+  g.connect_by_name( iflow,    place          )
+  g.connect_by_name( iflow,    cts            )
+  g.connect_by_name( iflow,    postcts_hold   )
+  g.connect_by_name( iflow,    route          )
+  g.connect_by_name( iflow,    postroute      )
+  g.connect_by_name( iflow,    postroute_hold )
+  g.connect_by_name( iflow,    signoff        )
 
   g.connect_by_name( custom_init,  init     )
   g.connect_by_name( custom_power, power    )
-  g.connect_by_name( custom_cts, cts    )
+  g.connect_by_name( custom_cts, cts        )
 
-  g.connect_by_name( init,         power        )
-  g.connect_by_name( power,        place        )
-  g.connect_by_name( place,        cts          )
-  g.connect_by_name( cts,          postcts_hold )
-  g.connect_by_name( postcts_hold, route        )
-  g.connect_by_name( route,        postroute    )
-  g.connect_by_name( postroute,    signoff      )
-  g.connect_by_name( signoff,      drc          )
-  g.connect_by_name( signoff,      lvs          )
+  g.connect_by_name( init,         power          )
+  g.connect_by_name( power,        place          )
+  g.connect_by_name( place,        cts            )
+  g.connect_by_name( cts,          postcts_hold   )
+  g.connect_by_name( postcts_hold, route          )
+  g.connect_by_name( route,        postroute      )
+  g.connect_by_name( postroute,    postroute_hold )
+  g.connect_by_name( postroute_hold, signoff      )
+  g.connect_by_name( signoff,      drc            )
+  g.connect_by_name( signoff,      lvs            )
   g.connect(signoff.o('design-merged.gds'), drc.i('design_merged.gds'))
   g.connect(signoff.o('design-merged.gds'), lvs.i('design_merged.gds'))
 
-  g.connect_by_name( adk,          pt_signoff   )
-  g.connect_by_name( signoff,      pt_signoff   )
+  #g.connect_by_name( adk,          pt_signoff   )
+  #g.connect_by_name( signoff,      pt_signoff   )
   
-  g.connect_by_name( adk,          genlibdb   )
-  g.connect_by_name( signoff,      genlibdb   )
+  #g.connect_by_name( adk,          genlibdb   )
+  g.connect_by_name( adk,          genlib   )
+  #g.connect_by_name( signoff,      genlibdb   )
+  g.connect_by_name( signoff,      genlib   )
 
   g.connect_by_name( adk,      debugcalibre )
-  g.connect_by_name( dc,       debugcalibre )
+  #g.connect_by_name( dc,       debugcalibre )
+  g.connect_by_name( synth,    debugcalibre )
   g.connect_by_name( iflow,    debugcalibre )
   g.connect_by_name( signoff,  debugcalibre )
   g.connect_by_name( drc,      debugcalibre )
@@ -311,16 +352,17 @@ def construct():
   # steps, we modify the order parameter for that node which determines
   # which scripts get run and when they get run.
 
-  order = dc.get_param('order')
-  compile_idx = order.index( 'compile.tcl' )
-  order.insert ( compile_idx + 1, 'custom-dc-postcompile.tcl' )
-  dc.update_params( { 'order': order } )
+  #order = synth.get_param('order')
+  #compile_idx = order.index( 'compile.tcl' )
+  #order.insert ( compile_idx + 1, 'custom-dc-postcompile.tcl' )
+  #dc.update_params( { 'order': order } )
+  #synth.update_params( { 'order': order } )
 
   # genlibdb -- Remove 'report-interface-timing.tcl' beacuse it takes
   # very long and is not necessary
-  order = genlibdb.get_param('order')
-  order.remove( 'write-interface-timing.tcl' )
-  genlibdb.update_params( { 'order': order } )
+  #order = genlibdb.get_param('order')
+  #order.remove( 'write-interface-timing.tcl' )
+  #genlibdb.update_params( { 'order': order } )
 
   # init -- Add 'dont-touch.tcl' before reporting
 
@@ -339,11 +381,19 @@ def construct():
 
                                                                                                    
   # Remove 
-  dc_postconditions = dc.get_postconditions()
-  for postcon in dc_postconditions:
+  #dc_postconditions = dc.get_postconditions()
+  #for postcon in dc_postconditions:
+  #    if 'percent_clock_gated' in postcon:
+  #        dc_postconditions.remove(postcon)
+  #dc.set_postconditions( dc_postconditions )
+
+  synth_postconditions = synth.get_postconditions()
+  for postcon in synth_postconditions:
       if 'percent_clock_gated' in postcon:
-          dc_postconditions.remove(postcon)
-  dc.set_postconditions( dc_postconditions )
+          synth_postconditions.remove(postcon)
+  synth.set_postconditions( synth_postconditions )
+
+
 
   return g
 

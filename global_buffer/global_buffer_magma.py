@@ -55,8 +55,8 @@ class GlobalBuffer(Generator):
         self.add_ports(
             clk=magma.In(magma.Clock),
             reset=magma.In(magma.AsyncReset),
-            stall=magma.In(magma.Bit),
-            cgra_stall_in=magma.In(magma.Bit),
+            stall=magma.In(magma.Bits[self.num_glb_tiles]),
+            cgra_stall_in=magma.In(magma.Bits[self.num_glb_tiles]),
             cgra_soft_reset=magma.In(magma.Bit),
 
             proc_packet=ProcPacketIfc(self.glb_addr_width,
@@ -122,8 +122,8 @@ class GlobalBuffer(Generator):
         # instantiate global buffer declaration
         self.glb_dcl = GlobalBufferDeclarationGenerator(self.param)
 
+        self.glb_dcl.gen_param_files()
         if parameter_only:
-            self.glb_dcl.gen_param_files()
             return
 
         self.underlying = FromMagma(self.glb_dcl)

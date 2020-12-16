@@ -73,7 +73,9 @@ class CreateNetlist(Visitor):
             id_to_instr=None,
             inst_to_instr=None,
             netlist=self.net_to_sp,
-            buses=self.buses
+            buses=self.buses,
+            node_to_id=self.node_to_id,
+            net_to_id=self.net_to_id
         )
 
     def generic_visit(self, node):
@@ -83,8 +85,8 @@ class CreateNetlist(Visitor):
         if type(node) not in self.node_info:
             raise ValueError(f"Cannot handle {node}")
         node_id = f"{self.node_info[type(node)]}{self.node_id}"
-        self.node_id += 1
         self.node_to_id[node] = node_id
+        self.node_id += 1
 
         # Get the child name -> nets
         fields = list(node.nodes.peak_nodes[node.node_name].Py.input_t.field_dict)
@@ -123,4 +125,5 @@ class CreateNetlist(Visitor):
             node_id = f"I{self.node_id}"
             self.node_id += 1
             self.net_to_sp[net_id].append((node_id, "f2io_16"))
+            self.net_to_id[net_id] = node_id
 

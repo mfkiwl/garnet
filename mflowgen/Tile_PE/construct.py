@@ -10,6 +10,7 @@ import os
 import sys
 
 from mflowgen.components import Graph, Step
+from shutil import which
 
 def construct():
 
@@ -43,7 +44,7 @@ def construct():
   parameters = {
     'construct_path'    : __file__,
     'design_name'       : 'Tile_PE',
-    'clock_period'      : 4,  # Change to 250 MHz to match Mem.
+    'clock_period'      : 1.1,
     'adk'               : adk_name,
     'adk_view'          : adk_view,
     # Synthesis
@@ -54,9 +55,7 @@ def construct():
     # Power Domains
     'PWR_AWARE'         : pwr_aware,
     'core_density_target': 0.63,
-
     'saif_instance'     : 'TilePETb/Tile_PE_inst',
-
     'testbench_name'    : 'TilePETb',
     'strip_path'        : 'TilePETb/Tile_PE_inst'
     }
@@ -126,8 +125,12 @@ def construct():
   signoff      = Step( 'cadence-innovus-signoff',       default=True )
   pt_signoff   = Step( 'synopsys-pt-timing-signoff',    default=True )
   genlibdb     = Step( 'cadence-genus-genlib',          default=True )
-  drc          = Step( 'mentor-calibre-drc',            default=True )
-  lvs          = Step( 'mentor-calibre-lvs',            default=True )
+  if which("calibre") is not None:
+      drc          = Step( 'mentor-calibre-drc',            default=True )
+      lvs          = Step( 'mentor-calibre-lvs',            default=True )
+  else:
+      drc          = Step( 'cadence-pegasus-drc',           default=True )
+      lvs          = Step( 'cadence-pegasus-lvs',           default=True )
   debugcalibre = Step( 'cadence-innovus-debug-calibre', default=True )
 
   # Add custom timing scripts
@@ -162,8 +165,8 @@ def construct():
   if pwr_aware:
       synth.extend_inputs(['designer-interface.tcl', 'upf_Tile_PE.tcl', 'pe-constraints.tcl', 'pe-constraints-2.tcl', 'dc-dont-use-constraints.tcl'])
       init.extend_inputs(['upf_Tile_PE.tcl', 'pe-load-upf.tcl', 'dont-touch-constraints.tcl', 'pd-pe-floorplan.tcl', 'pe-add-endcaps-welltaps-setup.tcl', 'pd-add-endcaps-welltaps.tcl', 'pe-power-switches-setup.tcl', 'add-power-switches.tcl', 'check-clamp-logic-structure.tcl'])
-      place.extend_inputs(['place-dont-use-constraints.tcl', 'check-clamp-logic-structure.tcl'])
       power.extend_inputs(['pd-globalnetconnect.tcl'] )
+      place.extend_inputs(['place-dont-use-constraints.tcl', 'check-clamp-logic-structure.tcl', 'add-aon-tie-cells.tcl'])
       cts.extend_inputs(['conn-aon-cells-vdd.tcl', 'check-clamp-logic-structure.tcl'])
       postcts_hold.extend_inputs(['conn-aon-cells-vdd.tcl', 'check-clamp-logic-structure.tcl'] )
       route.extend_inputs(['conn-aon-cells-vdd.tcl', 'check-clamp-logic-structure.tcl'] )
@@ -416,6 +419,7 @@ def construct():
       # place node
       order = place.get_param('order')
       read_idx = order.index( 'main.tcl' ) # find main.tcl
+      order.insert(read_idx + 1, 'add-aon-tie-cells.tcl')
       order.insert(read_idx - 1, 'place-dont-use-constraints.tcl')
       order.append('check-clamp-logic-structure.tcl')
       place.update_params( { 'order': order } )

@@ -56,7 +56,7 @@ remove_driving_cell reset
 # Constrain INPUTS
 # - make this non-zero to avoid hold buffers on input-registered designs
 set i_delay [expr 0.2 * ${clock_period}]
-set_input_delay -clock ${clock_name} ${i_delay} [all_inputs]
+set_input_delay -clock ${clock_name} ${i_delay} [all_inputs -no_clocks]
 # Pass through should have no input delay
 set pt_i_delay [expr 0.8 * ${clock_period}]
 set_input_delay -clock ${clock_name} ${pt_i_delay} clk_pass_through
@@ -177,3 +177,8 @@ set_false_path -from [get_ports tile_id]
 #set_tlu_plus_files -max_tluplus  $tluplus_max \
 #                   -min_tluplus  $tluplus_min \
 #                   -tech2itf_map $tluplus_map
+
+# Preserve the RMUXes so that we can easily constrain them later
+set rmux_cells [get_cells -hier RMUX_T*sel_inst0]
+set_dont_touch $rmux_cells true
+set_dont_touch [get_nets -of_objects [get_pins -of_objects $rmux_cells -filter name=~O*]] true

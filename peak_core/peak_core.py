@@ -102,6 +102,7 @@ class PeakCore(ConfigurableCore):
                     continue
                 magma_type = _convert_type(typ)
                 self.add_port(name, dir_(magma_type))
+                print("peak core port:" + name)
                 my_port = self.ports[name]
                 if magma_type is magma.Bits[1]:
                     my_port = my_port[0]
