@@ -24,6 +24,16 @@ from lassen.sim import PE_fc
 
 from peak_gen.arch import read_arch
 from peak_gen.peak_wrapper import wrapped_peak_class
+# from mapper import CreateNetlist
+from mapper.resnet_netlist import create_resnet_netlist
+import metamapper.coreir_util as cutil
+from metamapper.common_passes import VerifyNodes, print_dag
+from metamapper import CoreIRContext
+from metamapper.irs.coreir import gen_CoreIRNodes
+from metamapper.node import Nodes, Constant
+import metamapper.peak_util as putil
+from metamapper.coreir_mapper import Mapper
+import archipelago.io
 
 # set the debug mode to false to speed up construction
 set_debug_mode(False)
@@ -121,7 +131,7 @@ class Garnet(Generator):
                                    pe_fc=pe_fc)
 
         self.interconnect = interconnect
-
+        self.pe_fc = pe_fc
         # make multiple stall ports
         stall_port_pass(self.interconnect)
         # make multiple configuration ports
@@ -250,8 +260,35 @@ class Garnet(Generator):
         return input_interface, output_interface,\
                (reset_port_name, valid_port_name, en_port_name)
 
+    def metamap(self, app):
+        file_name = f"coreir_examples/post_mapped/{app}.json"
+        # arch_fc = PE["fc"]
+        # app = "conv_3_3"
+        ArchNodes = Nodes("Arch")
+        putil.load_from_peak(ArchNodes, self.pe_fc)
+        # file_name = f"coreir_examples/post_mapped/{app}.json"
+        c = CoreIRContext(reset=True)
+        cutil.load_libs(["cgralib"])
+        cutil.load_libs(["commonlib"])
+        CoreIRNodes = gen_CoreIRNodes(16)
+        cmod = cutil.load_from_json(file_name) #libraries=["lakelib"])
+        dag = cutil.coreir_to_dag(CoreIRNodes, cmod)
+        # mapper = Mapper(CoreIRNodes, ArchNodes, lazy=True, rule_file=PE["rules"])
+        # mapped_dag = mapper.do_mapping(dag, prove_mapping=False)
+        # print_dag(mapped_dag)
+        
+
     def compile(self, halide_src, unconstrained_io=False, compact=False):
+        # id_to_name, instance_to_instr, netlist, bus = self.metamap(halide_src)
         id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
+        print("netlist")
+        for net in netlist.items(): print(net)
+        print("id_to_name")
+        for net in id_to_name.items(): print(net)
+        print("instance_to_instr")
+        for net in instance_to_instr.items(): print(net)
+        print("bus")
+        for net in bus.items(): print(net)        
         app_dir = os.path.dirname(halide_src)
         if unconstrained_io:
             fixed_io = None
@@ -261,8 +298,7 @@ class Garnet(Generator):
                                              cwd="temp",
                                              id_to_name=id_to_name,
                                              fixed_pos=fixed_io,
-                                             compact=compact,
-                                             copy_to_dir=app_dir)
+                                             compact=compact)
         routing_fix = archipelago.power.reduce_switching(routing, self.interconnect,
                                                          compact=compact)
         routing.update(routing_fix)
@@ -279,23 +315,12 @@ class Garnet(Generator):
                                                        placement,
                                                        id_to_name)
         delay = 1 if has_rom(id_to_name) else 0
+        # also write out the meta file
+        archipelago.io.dump_meta_file(halide_src, "design", os.path.dirname(halide_src))
         return bitstream, (input_interface, output_interface, reset, valid, en,
                            delay)
 
-    def compile_virtualize(self, halide_src, max_group):
-        id_to_name, instance_to_instr, netlist, bus = self.map(halide_src)
-        partition_result = archipelago.pnr_virtualize(self.interconnect, (netlist, bus), cwd="temp",
-                                                      id_to_name=id_to_name, max_group=max_group)
-        result = {}
-        for c_id, ((placement, routing), p_id_to_name) in partition_result.items():
-            bitstream = []
-            bitstream += self.interconnect.get_route_bitstream(routing)
-            bitstream += self.get_placement_bitstream(placement, p_id_to_name,
-                                                      instance_to_instr)
-            skip_addr = self.interconnect.get_skip_addr()
-            bitstream = compress_config_data(bitstream, skip_compression=skip_addr)
-            result[c_id] = bitstream
-        return result
+ 
 
     def create_stub(self):
         result = """
@@ -335,8 +360,8 @@ def write_out_bitstream(filename, bitstream):
 
 def main():
     parser = argparse.ArgumentParser(description='Garnet CGRA')
-    parser.add_argument('--width', type=int, default=4)
-    parser.add_argument('--height', type=int, default=2)
+    parser.add_argument('--width', type=int, default=16)
+    parser.add_argument('--height', type=int, default=16)
     parser.add_argument('--pipeline_config_interval', type=int, default=8)
     parser.add_argument("--input-app", type=str, default="", dest="app")
     parser.add_argument("--input-file", type=str, default="", dest="input")
@@ -382,7 +407,6 @@ def main():
     if args.verilog:
         garnet_circ = garnet.circuit()
         magma.compile("garnet", garnet_circ, output="coreir-verilog",
-                      coreir_libs={"float_CW"},
                       passes = ["rungenerators", "inline_single_instances", "clock_gate"],
                       disable_ndarray=True,
                       inline=False)

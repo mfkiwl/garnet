@@ -7,7 +7,7 @@ import sys
 import filecmp
 from fault import Tester
 import glob
-
+import random
 
 def copy_file(src_filename, dst_filename, override=False):
     if (
@@ -20,16 +20,18 @@ def copy_file(src_filename, dst_filename, override=False):
 
 
 class BasicTester(Tester):
-    def __init__(self, circuit, clock, reset_port=None):
+    def __init__(self, circuit, clock, reset_port=None, y_interval=1):
         super().__init__(circuit, clock)
         self.reset_port = reset_port
         self.__xmin = 0xFFFF
         self.__xmax = 0
+        self.y_interval = y_interval
 
         self.__last_addr = None
 
     def __get_x(self, addr):
         x = (addr >> 8) & 0xFF
+        # print(x)
         if x > self.__xmax:
             self.__xmax = x
         if x < self.__xmin:
@@ -73,6 +75,7 @@ class BasicTester(Tester):
         self.poke(self._circuit.interface[port_name], value)
 
     def configure(self, addr, data, assert_wr=True):
+        print("config", addr, data)
         self.poke(self.clock, 0)
         self.poke(self.reset_port, 0)
         self.__config_addr(addr, addr)
@@ -93,7 +96,12 @@ class BasicTester(Tester):
         self.__config_addr(addr, addr)
         self.__config_read(addr, 1)
         self.__config_write(addr, 0)
-        self.step(2)
+        # SRAM content has to be read out immediately
+        x = (addr & 0xFF00) >> 8
+        if x % 4 == 3:
+            self.step(2)
+        else:
+            self.step(2 * self.y_interval)
 
     def reset(self):
         self.poke(self.reset_port, 1)
@@ -163,6 +171,14 @@ class TestBenchGenerator:
                 addr = int(addr, 16)
                 value = int(value, 16)
                 self.bitstream.append((addr, value))
+        # compute the config pipeline interval
+        max_y = 0
+        for addr, _ in self.bitstream:
+            y = addr & 0xFF
+            if y > max_y:
+                max_y = y
+        config_pipeline_interval = 8
+        self.y_interval = ((max_y - 1) // 8) + 1
         self.input_filename = config["input_filename"]
         self.output_filename = f"{bitstream_file}.out"
         self.gold_filename = config["gold_filename"]
@@ -252,7 +268,8 @@ class TestBenchGenerator:
         return input_size, loop_size
 
     def test(self):
-        tester = BasicTester(self.circuit, self.circuit.clk, self.circuit.reset)
+        tester = BasicTester(self.circuit, self.circuit.clk, self.circuit.reset,
+                             y_interval=self.y_interval)
         if self.use_xcelium:
             tester.zero_inputs()
         tester.reset()
@@ -260,9 +277,9 @@ class TestBenchGenerator:
         # now load the file up
 
         # file in
-        file_in = tester.file_open(self.input_filename, "r",
+        file_in = tester.file_open("input.raw", "r",
                                    chunk_size=self._input_size)
-        file_out = tester.file_open(self.output_filename, "w",
+        file_out = tester.file_open("output.raw", "w",
                                     chunk_size=self._output_size)
         if len(self.valid_port_name) > 0:
             valid_out = tester.file_open(f"{self.output_filename}.valid", "w")
@@ -280,7 +297,7 @@ class TestBenchGenerator:
         for addr, value in self.bitstream:
             tester.config_read(addr)
             tester.eval()
-            tester.expect(self.circuit.read_config_data, value)
+            # tester.expect(self.circuit.read_config_data, value)
 
         tester.done_config()
 
@@ -302,18 +319,17 @@ class TestBenchGenerator:
         output_port_names = self.output_port_name[:]
         output_port_names.sort()
 
-        loop = tester.loop(self._loop_size * len(input_port_names))
+        loop = tester.loop(28*28*8 * len(input_port_names) + 1)
+        print("loop:", 28*28*8 * len(input_port_names) + 1)
         for input_port_name in input_port_names:
             value = loop.file_read(file_in)
             loop.poke(self.circuit.interface[input_port_name], value)
-            loop.eval()
+            # loop.eval()
         for output_port_name in output_port_names:
             loop.file_write(file_out, self.circuit.interface[output_port_name])
         if valid_out is not None:
             loop.file_write(valid_out,
                             self.circuit.interface[self.valid_port_name])
-        loop.step(2)
-
         # delay loop
         if self.delay > 0:
             delay_loop = tester.loop(self.delay)
@@ -329,13 +345,27 @@ class TestBenchGenerator:
 
         tester.file_close(file_in)
         tester.file_close(file_out)
+
+        #loop = tester.loop(28*28*8 * len(input_port_names) + 1)
+        #print("loop: ", (28*28*8 * len(input_port_names)) + 1)
+        #for input_port_name in input_port_names:
+        #    num_1 = random.randrange(0, 256)
+        #    loop.poke(self.circuit.interface[input_port_name], num_1)
+        #    #loop.eval() # commented this out for realistic simulation accuracy
+        loop.step(2)
+
         if valid_out is not None:
             tester.file_close(valid_out)
 
         # skip the compile and directly to run
-        tempdir = "temp/garnet"
+        tempdir = "temp_lassen/garnet"
         if not os.path.isdir(tempdir):
             os.makedirs(tempdir, exist_ok=True)
+
+        self.output_filename = os.path.join(tempdir, self.output_filename)
+
+        copy_file(self.input_filename,
+                      os.path.join(tempdir, self.input_filename))
         # copy files over
         if self.use_xcelium:
             # coreir always outputs as verilog even though we have system-
@@ -362,11 +392,6 @@ class TestBenchGenerator:
                 copy_file(os.path.join(base_dir, "peak_core", filename),
                           os.path.join(tempdir, filename))
 
-        # memory core
-        copy_file(os.path.join(base_dir,
-                               "tests", "test_memory_core",
-                               "sram_stub.v"),
-                  os.path.join(tempdir, "sram_512w_16b.v"))
         # std cells
         for std_cell in glob.glob(os.path.join(base_dir, "tests/*.sv")):
             copy_file(std_cell,
@@ -378,6 +403,7 @@ class TestBenchGenerator:
                       os.path.join(tempdir, os.path.basename(genesis_verilog)))
 
         if self.use_xcelium:
+            clk_period = 1.1
             verilogs = list(glob.glob(os.path.join(tempdir, "*.v")))
             verilogs += list(glob.glob(os.path.join(tempdir, "*.sv")))
             verilog_libraries = [os.path.basename(f) for f in verilogs]
@@ -395,8 +421,10 @@ class TestBenchGenerator:
                                    # num_cycles is an experimental feature
                                    # need to be merged in fault
                                    num_cycles=1000000,
+                                   clock_step_delay=(clk_period / 2.0),
+                                   timescale="1ns/1ps",
                                    no_warning=True,
-                                   dump_vcd=False,
+                                   dump_vcd=True,
                                    include_verilog_libraries=verilog_libraries,
                                    directory=tempdir)
         else:
@@ -468,4 +496,4 @@ if __name__ == "__main__":
 
     test = TestBenchGenerator(args)
     test.test()
-    test.compare()
+    # test.compare()
